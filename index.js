@@ -8,6 +8,7 @@ const PORT = process.env.PORT || 3000;
 const PASHA_MERCHANT_URL = "https://ecomm.pashabank.az:18443/ecomm2/MerchantHandler";
 const PASHA_CLIENT_URL = "https://ecomm.pashabank.az:8463/ecomm2/ClientHandler";
 const BRIDGE_SECRET = process.env.BRIDGE_SECRET || "";
+const TERMINAL_ID = process.env.PASHA_TERMINAL_ID || "EC600240";
 
 function formatPem(raw, header, footer) {
   if (!raw) return "";
@@ -73,13 +74,15 @@ function verifySecret(req, res, next) {
   next();
 }
 
-// 1. Command V: Register SMS 3DS transaction
+// 1. Command V: Register SMS 3DS transaction with Terminal ID
 app.post("/register-payment", verifySecret, async (req, res) => {
   try {
-    const { amount, client_ip_addr, description = "BirBazar Payment" } = req.body;
+    const { amount, client_ip_addr, description = "BirBazar Payment", terminal_id } = req.body;
     if (!amount) {
       return res.status(400).json({ error: "Missing amount (in gepik)" });
     }
+
+    const termId = terminal_id || TERMINAL_ID;
 
     const params = {
       command: "v",
@@ -88,12 +91,12 @@ app.post("/register-payment", verifySecret, async (req, res) => {
       client_ip_addr: client_ip_addr || "185.11.11.11",
       description: description.substring(0, 50),
       msg_type: "SMS",
+      terminal_id: termId,
     };
 
     const response = await sendPashaCommand(params);
     const text = response.raw;
 
-    // Output is like: TRANSACTION_ID: 60ibSLUnMSQVVAMqim50qf1SKNg=
     const match = text.match(/TRANSACTION_ID:\s*([^\s]+)/i);
     if (!match) {
       return res.status(400).json({ error: "Bank rejected", raw: text });
@@ -113,18 +116,21 @@ app.post("/register-payment", verifySecret, async (req, res) => {
   }
 });
 
-// 2. Command C: Check transaction status
+// 2. Command C: Check and complete transaction status
 app.post("/check-status", verifySecret, async (req, res) => {
   try {
-    const { trans_id, client_ip_addr } = req.body;
+    const { trans_id, client_ip_addr, terminal_id } = req.body;
     if (!trans_id) {
       return res.status(400).json({ error: "Missing trans_id" });
     }
+
+    const termId = terminal_id || TERMINAL_ID;
 
     const params = {
       command: "c",
       trans_id,
       client_ip_addr: client_ip_addr || "185.11.11.11",
+      terminal_id: termId,
     };
 
     const response = await sendPashaCommand(params);
